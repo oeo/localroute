@@ -2,33 +2,13 @@ const fs = require('fs')
 const path = require('path')
 
 const parse_config = (content) => {
-  const sites = []
-  const lines = content.split('\n')
-  let current_site = null
-
-  for (const line of lines) {
-    const trimmed = line.trim()
-    
-    if (trimmed.startsWith('define {')) {
-      current_site = {}
-      continue
-    }
-
-    if (trimmed === '}') {
-      if (current_site) sites.push(current_site)
-      current_site = null
-      continue
-    }
-
-    if (current_site && trimmed) {
-      const [key, value] = trimmed.split(':').map(s => s.trim())
-      if (key && value) {
-        current_site[key] = value.replace(/[",]/g, '')
-      }
-    }
+  try {
+    const config = JSON.parse(content)
+    return config.sites
+  } catch (error) {
+    console.error('Error parsing config:', error.message)
+    process.exit(1)
   }
-
-  return sites
 }
 
 const generate_nginx_config = (sites) => {
@@ -70,26 +50,36 @@ http {
 `
 
   for (const site of sites) {
-    const ssl = site.force_ssl === 'true'
+    const ssl = site.force_ssl
     const domain = site.network_domain
-    const upstream = site.real_host.replace(/^https?:\/\//, '')
+    const upstream = site.real_host.replace(/^http:\/\//, '')
 
+    console.log(`Processing site: ${domain} -> ${upstream}`)
+
+    // HTTP server block
     config += `
   # ${domain}
   server {
     listen 80;
     server_name ${domain};
-    ${ssl ? 'return 301 https://$server_name$request_uri;' : ''}
-
-    ${!ssl ? `location / {
+`
+    if (ssl) {
+      config += `    return 301 https://$server_name$request_uri;
+  }`
+    } else {
+      config += `    location / {
       proxy_pass http://${upstream};
       proxy_set_header Host $host;
       proxy_set_header X-Real-IP $remote_addr;
       proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
       proxy_set_header X-Forwarded-Proto $scheme;
-    }` : ''}
+      proxy_read_timeout 300;
+      proxy_connect_timeout 300;
+    }
   }`
+    }
 
+    // HTTPS server block if SSL is enabled
     if (ssl) {
       config += `
 
@@ -106,6 +96,8 @@ http {
       proxy_set_header X-Real-IP $remote_addr;
       proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
       proxy_set_header X-Forwarded-Proto $scheme;
+      proxy_read_timeout 300;
+      proxy_connect_timeout 300;
     }
   }`
     }
@@ -153,7 +145,7 @@ address=/.local/172.20.0.2
 `
 
   for (const site of sites) {
-    if (site.force_dns === 'true') {
+    if (site.force_dns) {
       config += `# ${site.network_domain}
 address=/${site.network_domain}/172.20.0.2\n`
     }
@@ -163,11 +155,18 @@ address=/${site.network_domain}/172.20.0.2\n`
 }
 
 const main = () => {
-  const config_content = fs.readFileSync('sites.conf', 'utf8')
-  const sites = parse_config(config_content)
+  try {
+    const config_content = fs.readFileSync('sites.conf', 'utf8')
+    const sites = parse_config(config_content)
 
-  fs.writeFileSync('docker/nginx/nginx.conf', generate_nginx_config(sites))
-  fs.writeFileSync('docker/dnsmasq/dnsmasq.conf', generate_dnsmasq_config(sites))
+    fs.writeFileSync('docker/nginx/nginx.conf', generate_nginx_config(sites))
+    fs.writeFileSync('docker/dnsmasq/dnsmasq.conf', generate_dnsmasq_config(sites))
+    
+    console.log('Configuration generated successfully')
+  } catch (error) {
+    console.error('Error:', error.message)
+    process.exit(1)
+  }
 }
 
 if (require.main === module) {

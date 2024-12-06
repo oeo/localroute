@@ -32,20 +32,22 @@ a local dns and routing solution using dnsmasq and nginx in docker. this project
 ## configuration
 edit `sites.conf` to define your domains and upstream servers:
 
-```
-define {
-  force_ssl: true                        # force ssl on this domain
-  force_dns: true                        # add dns record to dnsmasq
-  network_domain: "librechat.local"      # domain name to use
-  real_host: "http://192.168.1.167:3006" # upstream server to proxy to
-}
-
-# you can define multiple sites
-define {
-  force_ssl: false
-  force_dns: true
-  network_domain: "example.local"
-  real_host: "http://192.168.1.100:8080"
+```json
+{
+  "sites": [
+    {
+      "force_ssl": false,
+      "force_dns": true,
+      "network_domain": "example.local",
+      "real_host": "http://192.168.1.100:8080"
+    },
+    {
+      "force_ssl": true,
+      "force_dns": true,
+      "network_domain": "librechat.local",
+      "real_host": "http://192.168.1.167:3006"
+    }
+  ]
 }
 ```
 
