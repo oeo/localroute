@@ -41,3 +41,4 @@ yarn-lock.json
 *.7z
 *.rar
 
+docker/nginx/nginx.conf
