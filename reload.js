@@ -11,7 +11,14 @@ const cleanup = () => {
   try {
     // Stop services
     execSync('docker-compose down', { stdio: 'inherit' })
+  } catch (error) {
+    console.error('cleanup error:', error.message)
+  }
+}
 
+const cleanup_files = () => {
+  console.log('cleaning up generated files...')
+  try {
     // Remove generated files
     const files_to_remove = [
       'docker/nginx/nginx.conf',
@@ -268,6 +275,7 @@ const main = async () => {
     const args = process.argv.slice(2)
     if (args.includes('--clean')) {
       cleanup()
+      cleanup_files()
       return
     }
 
@@ -276,6 +284,9 @@ const main = async () => {
 
     console.log('setting up directories...')
     ensure_dirs()
+
+    // Stop services first
+    cleanup()
 
     console.log('generating configuration...')
     require('./config-parser')
@@ -287,7 +298,6 @@ const main = async () => {
     configure_system_dns()
 
     console.log('starting services...')
-    cleanup()
     execSync('docker-compose up -d', { stdio: 'inherit' })
 
     // Wait for services to start
