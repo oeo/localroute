@@ -67,6 +67,31 @@ const ensure_dirs = () => {
       fs.mkdirSync(dir, { recursive: true })
     }
   }
+
+  // ensure sites.conf exists with a default configuration
+  if (!fs.existsSync('sites.conf')) {
+    const default_config = `define {
+  force_ssl: false
+  force_dns: true
+  network_domain: "example.local"
+  real_host: "http://127.0.0.1:8080"
+}
+`
+    fs.writeFileSync('sites.conf', default_config)
+  }
+
+  // ensure dnsmasq.conf exists and is a file, not a directory
+  const dnsmasq_conf = 'docker/dnsmasq/dnsmasq.conf'
+  if (fs.existsSync(dnsmasq_conf)) {
+    try {
+      const stats = fs.statSync(dnsmasq_conf)
+      if (stats.isDirectory()) {
+        fs.rmdirSync(dnsmasq_conf)
+      }
+    } catch (e) {
+      // ignore errors
+    }
+  }
 }
 
 const refresh_config = () => {
