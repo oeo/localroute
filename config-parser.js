@@ -118,7 +118,7 @@ interface=*
 all-servers
 dns-forward-max=150
 
-# disable mdns
+# disable mdns warnings
 local-service
 domain-needed
 
@@ -141,6 +141,14 @@ server=8.8.8.8
 
 # explicitly handle .local domains
 address=/.local/172.20.0.2
+
+# disable mdns
+server=/local/
+server=/254.169.in-addr.arpa/
+server=/8.e.f.ip6.arpa/
+server=/9.e.f.ip6.arpa/
+server=/a.e.f.ip6.arpa/
+server=/b.e.f.ip6.arpa/
 
 `
 
