@@ -148,21 +148,30 @@ const kill_port_53 = () => {
 }
 
 const ensure_dirs = () => {
+  console.log('setting up directories...')
   const dirs = [
     'docker/nginx',
     'docker/dnsmasq',
     'ssl'
   ]
 
+  // Create directories with explicit permissions
   for (const dir of dirs) {
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true })
+    try {
+      if (!fs.existsSync(dir)) {
+        console.log(`creating directory: ${dir}`)
+        fs.mkdirSync(dir, { recursive: true, mode: 0o755 })
+      }
+      // Ensure directory is writable
+      fs.accessSync(dir, fs.constants.W_OK)
+    } catch (error) {
+      console.error(`Error with directory ${dir}:`, error.message)
+      process.exit(1)
     }
   }
 
-  // Ensure config files exist with default content
-  const default_configs = {
-    'docker/nginx/nginx.conf': `user nginx;
+  // Write initial nginx config
+  const nginx_config = `user nginx;
 worker_processes auto;
 pid /var/run/nginx.pid;
 
@@ -193,8 +202,10 @@ http {
     return 404;
   }
 }
-`,
-    'docker/dnsmasq/dnsmasq.conf': `# don't use /etc/resolv.conf
+`
+
+  // Write initial dnsmasq config
+  const dnsmasq_config = `# don't use /etc/resolv.conf
 no-resolv
 
 # listen on all interfaces
@@ -228,12 +239,66 @@ server=8.8.8.8
 # explicitly handle .local domains
 address=/.local/172.20.0.2
 `
-  }
 
-  for (const [file, content] of Object.entries(default_configs)) {
-    if (!fs.existsSync(file)) {
-      fs.writeFileSync(file, content)
+  try {
+    // Write nginx config with explicit permissions
+    console.log('writing initial nginx config...')
+    const nginx_path = 'docker/nginx/nginx.conf'
+    fs.writeFileSync(nginx_path, nginx_config, { 
+      encoding: 'utf8', 
+      mode: 0o644,
+      flag: 'w'
+    })
+    
+    // Verify nginx config was written correctly
+    const written_nginx = fs.readFileSync(nginx_path, 'utf8')
+    if (written_nginx.length !== nginx_config.length) {
+      throw new Error(`nginx config verification failed: expected ${nginx_config.length} bytes but got ${written_nginx.length}`)
     }
+    console.log(`nginx config written successfully (${written_nginx.length} bytes)`)
+
+    // Write dnsmasq config with explicit permissions
+    console.log('writing initial dnsmasq config...')
+    const dnsmasq_path = 'docker/dnsmasq/dnsmasq.conf'
+    fs.writeFileSync(dnsmasq_path, dnsmasq_config, { 
+      encoding: 'utf8', 
+      mode: 0o644,
+      flag: 'w'
+    })
+    
+    // Verify dnsmasq config was written correctly
+    const written_dnsmasq = fs.readFileSync(dnsmasq_path, 'utf8')
+    if (written_dnsmasq.length !== dnsmasq_config.length) {
+      throw new Error(`dnsmasq config verification failed: expected ${dnsmasq_config.length} bytes but got ${written_dnsmasq.length}`)
+    }
+    console.log(`dnsmasq config written successfully (${written_dnsmasq.length} bytes)`)
+
+  } catch (error) {
+    console.error('Error writing configuration files:', error.message)
+    // Try to get more information about the error
+    try {
+      const nginx_stats = fs.statSync('docker/nginx/nginx.conf')
+      console.error('nginx.conf stats:', {
+        size: nginx_stats.size,
+        mode: nginx_stats.mode.toString(8),
+        uid: nginx_stats.uid,
+        gid: nginx_stats.gid
+      })
+    } catch (e) {
+      console.error('Could not get nginx.conf stats:', e.message)
+    }
+    try {
+      const dnsmasq_stats = fs.statSync('docker/dnsmasq/dnsmasq.conf')
+      console.error('dnsmasq.conf stats:', {
+        size: dnsmasq_stats.size,
+        mode: dnsmasq_stats.mode.toString(8),
+        uid: dnsmasq_stats.uid,
+        gid: dnsmasq_stats.gid
+      })
+    } catch (e) {
+      console.error('Could not get dnsmasq.conf stats:', e.message)
+    }
+    process.exit(1)
   }
 }
 

@@ -164,15 +164,74 @@ address=/${site.network_domain}/172.20.0.2\n`
 
 const main = () => {
   try {
+    // Read and parse config
+    console.log('reading configuration...')
     const config_content = fs.readFileSync('sites.conf', 'utf8')
     const sites = parse_config(config_content)
 
-    fs.writeFileSync('docker/nginx/nginx.conf', generate_nginx_config(sites))
-    fs.writeFileSync('docker/dnsmasq/dnsmasq.conf', generate_dnsmasq_config(sites))
+    // Generate configs
+    console.log('generating configurations...')
+    const nginx_config = generate_nginx_config(sites)
+    const dnsmasq_config = generate_dnsmasq_config(sites)
+
+    // Write nginx config with explicit permissions
+    console.log('writing nginx configuration...')
+    const nginx_path = 'docker/nginx/nginx.conf'
+    fs.writeFileSync(nginx_path, nginx_config, { 
+      encoding: 'utf8', 
+      mode: 0o644,
+      flag: 'w'
+    })
     
-    console.log('Configuration generated successfully')
+    // Verify nginx config
+    const written_nginx = fs.readFileSync(nginx_path, 'utf8')
+    if (written_nginx.length !== nginx_config.length) {
+      throw new Error(`nginx config verification failed: expected ${nginx_config.length} bytes but got ${written_nginx.length}`)
+    }
+    console.log(`nginx config written successfully (${written_nginx.length} bytes)`)
+
+    // Write dnsmasq config with explicit permissions
+    console.log('writing dnsmasq configuration...')
+    const dnsmasq_path = 'docker/dnsmasq/dnsmasq.conf'
+    fs.writeFileSync(dnsmasq_path, dnsmasq_config, { 
+      encoding: 'utf8', 
+      mode: 0o644,
+      flag: 'w'
+    })
+    
+    // Verify dnsmasq config
+    const written_dnsmasq = fs.readFileSync(dnsmasq_path, 'utf8')
+    if (written_dnsmasq.length !== dnsmasq_config.length) {
+      throw new Error(`dnsmasq config verification failed: expected ${dnsmasq_config.length} bytes but got ${written_dnsmasq.length}`)
+    }
+    console.log(`dnsmasq config written successfully (${written_dnsmasq.length} bytes)`)
+
+    console.log('configuration generated successfully')
   } catch (error) {
     console.error('Error:', error.message)
+    // Try to get more information about the error
+    try {
+      const nginx_stats = fs.statSync('docker/nginx/nginx.conf')
+      console.error('nginx.conf stats:', {
+        size: nginx_stats.size,
+        mode: nginx_stats.mode.toString(8),
+        uid: nginx_stats.uid,
+        gid: nginx_stats.gid
+      })
+    } catch (e) {
+      console.error('Could not get nginx.conf stats:', e.message)
+    }
+    try {
+      const dnsmasq_stats = fs.statSync('docker/dnsmasq/dnsmasq.conf')
+      console.error('dnsmasq.conf stats:', {
+        size: dnsmasq_stats.size,
+        mode: dnsmasq_stats.mode.toString(8),
+        uid: dnsmasq_stats.uid,
+        gid: dnsmasq_stats.gid
+      })
+    } catch (e) {
+      console.error('Could not get dnsmasq.conf stats:', e.message)
+    }
     process.exit(1)
   }
 }
