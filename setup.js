@@ -31,6 +31,50 @@ const validate_config = () => {
   }
 }
 
+const generate_certificates = (sites) => {
+  console.log('generating ssl certificates...')
+  
+  // Check if mkcert is available
+  let use_mkcert = false
+  try {
+    execSync('which mkcert', { stdio: 'ignore' })
+    use_mkcert = true
+    console.log('using mkcert for trusted certificates')
+  } catch (e) {
+    console.log('mkcert not found, using self-signed certificates')
+  }
+
+  // Create ssl directory if it doesn't exist
+  if (!fs.existsSync('ssl')) {
+    fs.mkdirSync('ssl')
+  }
+
+  for (const site of sites) {
+    if (site.force_ssl) {
+      const domain = site.network_domain
+      console.log(`generating certificate for ${domain}...`)
+
+      if (use_mkcert) {
+        try {
+          execSync(`mkcert -cert-file ssl/${domain}.crt -key-file ssl/${domain}.key ${domain}`, { stdio: 'inherit' })
+        } catch (error) {
+          console.error(`failed to generate certificate for ${domain}:`, error.message)
+          process.exit(1)
+        }
+      } else {
+        try {
+          execSync(`openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+            -keyout ssl/${domain}.key -out ssl/${domain}.crt \
+            -subj "/CN=${domain}/O=LocalRoute/C=US"`, { stdio: 'inherit' })
+        } catch (error) {
+          console.error(`failed to generate self-signed certificate for ${domain}:`, error.message)
+          process.exit(1)
+        }
+      }
+    }
+  }
+}
+
 const kill_port_53 = () => {
   console.log('checking for processes on port 53...')
   try {
@@ -144,6 +188,9 @@ const main = async () => {
 
     console.log('generating configuration...')
     require('./config-parser')
+
+    console.log('generating certificates...')
+    generate_certificates(sites)
 
     kill_port_53()
 
