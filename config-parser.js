@@ -29,13 +29,22 @@ http {
                   '"$http_user_agent" "$http_x_forwarded_for"';
 
   access_log /dev/stdout main;
-  error_log /dev/stderr warn;
+  error_log /dev/stderr debug;
 
   sendfile on;
   tcp_nopush on;
   tcp_nodelay on;
   keepalive_timeout 65;
   types_hash_max_size 2048;
+
+  # ssl configuration
+  ssl_protocols TLSv1.2 TLSv1.3;
+  ssl_prefer_server_ciphers off;
+  ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
+  ssl_session_timeout 1d;
+  ssl_session_cache shared:SSL:50m;
+  ssl_session_tickets off;
+  ssl_buffer_size 4k;
 
   # default server block
   server {
@@ -85,10 +94,12 @@ http {
 
   server {
     listen 443 ssl;
+    listen [::]:443 ssl;
     server_name ${domain};
     
     ssl_certificate /etc/nginx/ssl/${domain}.crt;
     ssl_certificate_key /etc/nginx/ssl/${domain}.key;
+    ssl_trusted_certificate /etc/nginx/ssl/${domain}.crt;
 
     location / {
       proxy_pass http://${upstream};
