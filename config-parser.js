@@ -81,13 +81,13 @@ http {
     server_name ${domain};
     ${ssl ? 'return 301 https://$server_name$request_uri;' : ''}
 
-    location / {
+    ${!ssl ? `location / {
       proxy_pass http://${upstream};
       proxy_set_header Host $host;
       proxy_set_header X-Real-IP $remote_addr;
       proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
       proxy_set_header X-Forwarded-Proto $scheme;
-    }
+    }` : ''}
   }`
 
     if (ssl) {
