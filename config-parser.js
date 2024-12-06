@@ -72,7 +72,7 @@ http {
   for (const site of sites) {
     const ssl = site.force_ssl === 'true'
     const domain = site.network_domain
-    const upstream = site.real_host
+    const upstream = site.real_host.replace(/^https?:\/\//, '')
 
     config += `
   # ${domain}
@@ -82,7 +82,7 @@ http {
     ${ssl ? 'return 301 https://$server_name$request_uri;' : ''}
 
     location / {
-      proxy_pass ${upstream};
+      proxy_pass http://${upstream};
       proxy_set_header Host $host;
       proxy_set_header X-Real-IP $remote_addr;
       proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -101,7 +101,7 @@ http {
     ssl_certificate_key /etc/nginx/ssl/${domain}.key;
 
     location / {
-      proxy_pass ${upstream};
+      proxy_pass http://${upstream};
       proxy_set_header Host $host;
       proxy_set_header X-Real-IP $remote_addr;
       proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

@@ -25,7 +25,10 @@ services:
       - "53:53/udp"
       - "53:53/tcp"
     volumes:
-      - ./docker/dnsmasq/dnsmasq.conf:/etc/dnsmasq.conf:ro
+      - type: bind
+        source: ./docker/dnsmasq/dnsmasq.conf
+        target: /etc/dnsmasq.conf
+        read_only: true
     networks:
       dns_net:
         ipv4_address: 172.20.0.3
