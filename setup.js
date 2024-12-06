@@ -6,14 +6,43 @@ const { execSync } = require('child_process')
 const kill_port_53 = () => {
   console.log('checking for processes on port 53...')
   try {
-    // find and kill processes on port 53 (both tcp and udp)
     if (process.platform === 'darwin') {
       execSync('sudo lsof -i :53 | grep LISTEN | awk \'{print $2}\' | xargs kill -9', { stdio: 'ignore' })
     } else {
-      execSync('sudo fuser -k 53/tcp 53/udp', { stdio: 'ignore' })
+      // on linux, handle systemd-resolved first
+      try {
+        console.log('stopping systemd-resolved...')
+        execSync('sudo systemctl stop systemd-resolved', { stdio: 'ignore' })
+        execSync('sudo systemctl disable systemd-resolved', { stdio: 'ignore' })
+      } catch (e) {
+        // service might not exist
+      }
+
+      // handle other potential dns services
+      try {
+        console.log('stopping other dns services...')
+        const services = ['named', 'bind9', 'dnsmasq.service']
+        for (const service of services) {
+          try {
+            execSync(`sudo systemctl stop ${service}`, { stdio: 'ignore' })
+            execSync(`sudo systemctl disable ${service}`, { stdio: 'ignore' })
+          } catch (e) {
+            // service might not exist
+          }
+        }
+      } catch (e) {
+        // ignore errors if services don't exist
+      }
+
+      // kill any remaining processes on port 53
+      try {
+        execSync('sudo fuser -k 53/tcp 53/udp', { stdio: 'ignore' })
+      } catch (e) {
+        // no processes might be found
+      }
     }
   } catch (e) {
-    // ignore errors if no processes found
+    console.log('note: no processes found on port 53')
   }
 }
 
