@@ -5,6 +5,7 @@ const { execSync } = require('child_process')
 const dns = require('dns')
 const http = require('http')
 const https = require('https')
+const { parse_config, generate_nginx_config, generate_dnsmasq_config } = require('./config-parser')
 
 const cleanup = () => {
   console.log('cleaning up...')
@@ -169,137 +170,6 @@ const ensure_dirs = () => {
       process.exit(1)
     }
   }
-
-  // Write initial nginx config
-  const nginx_config = `user nginx;
-worker_processes auto;
-pid /var/run/nginx.pid;
-
-events {
-  worker_connections 1024;
-}
-
-http {
-  include /etc/nginx/mime.types;
-  default_type application/octet-stream;
-
-  log_format main '$remote_addr - $remote_user [$time_local] "$request" '
-                  '$status $body_bytes_sent "$http_referer" '
-                  '"$http_user_agent" "$http_x_forwarded_for"';
-
-  access_log /dev/stdout main;
-  error_log /dev/stderr warn;
-
-  sendfile on;
-  tcp_nopush on;
-  tcp_nodelay on;
-  keepalive_timeout 65;
-  types_hash_max_size 2048;
-
-  server {
-    listen 80 default_server;
-    server_name _;
-    return 404;
-  }
-}
-`
-
-  // Write initial dnsmasq config
-  const dnsmasq_config = `# don't use /etc/resolv.conf
-no-resolv
-
-# listen on all interfaces
-interface=*
-
-# enable dns forwarding
-all-servers
-dns-forward-max=150
-
-# disable mdns warnings
-local-service
-domain-needed
-
-# handle local domains
-local=/local/
-domain-needed
-bogus-priv
-expand-hosts
-
-# enable logging
-log-queries
-log-facility=-
-
-# cache size
-cache-size=1000
-
-# fallback dns resolvers
-server=1.1.1.1
-server=8.8.8.8
-
-# explicitly handle .local domains
-address=/.local/172.20.0.2
-`
-
-  try {
-    // Write nginx config with explicit permissions
-    console.log('writing initial nginx config...')
-    const nginx_path = 'docker/nginx/nginx.conf'
-    fs.writeFileSync(nginx_path, nginx_config, { 
-      encoding: 'utf8', 
-      mode: 0o644,
-      flag: 'w'
-    })
-    
-    // Verify nginx config was written correctly
-    const written_nginx = fs.readFileSync(nginx_path, 'utf8')
-    if (written_nginx.length !== nginx_config.length) {
-      throw new Error(`nginx config verification failed: expected ${nginx_config.length} bytes but got ${written_nginx.length}`)
-    }
-    console.log(`nginx config written successfully (${written_nginx.length} bytes)`)
-
-    // Write dnsmasq config with explicit permissions
-    console.log('writing initial dnsmasq config...')
-    const dnsmasq_path = 'docker/dnsmasq/dnsmasq.conf'
-    fs.writeFileSync(dnsmasq_path, dnsmasq_config, { 
-      encoding: 'utf8', 
-      mode: 0o644,
-      flag: 'w'
-    })
-    
-    // Verify dnsmasq config was written correctly
-    const written_dnsmasq = fs.readFileSync(dnsmasq_path, 'utf8')
-    if (written_dnsmasq.length !== dnsmasq_config.length) {
-      throw new Error(`dnsmasq config verification failed: expected ${dnsmasq_config.length} bytes but got ${written_dnsmasq.length}`)
-    }
-    console.log(`dnsmasq config written successfully (${written_dnsmasq.length} bytes)`)
-
-  } catch (error) {
-    console.error('Error writing configuration files:', error.message)
-    // Try to get more information about the error
-    try {
-      const nginx_stats = fs.statSync('docker/nginx/nginx.conf')
-      console.error('nginx.conf stats:', {
-        size: nginx_stats.size,
-        mode: nginx_stats.mode.toString(8),
-        uid: nginx_stats.uid,
-        gid: nginx_stats.gid
-      })
-    } catch (e) {
-      console.error('Could not get nginx.conf stats:', e.message)
-    }
-    try {
-      const dnsmasq_stats = fs.statSync('docker/dnsmasq/dnsmasq.conf')
-      console.error('dnsmasq.conf stats:', {
-        size: dnsmasq_stats.size,
-        mode: dnsmasq_stats.mode.toString(8),
-        uid: dnsmasq_stats.uid,
-        gid: dnsmasq_stats.gid
-      })
-    } catch (e) {
-      console.error('Could not get dnsmasq.conf stats:', e.message)
-    }
-    process.exit(1)
-  }
 }
 
 const configure_system_dns = () => {
@@ -412,74 +282,54 @@ const test_http = async (sites) => {
 
 const main = async () => {
   try {
-    // Handle command line arguments
-    const args = process.argv.slice(2)
-    if (args.includes('--clean')) {
-      cleanup()
-      cleanup_files()
-      return
-    }
-
     console.log('validating configuration...')
     const sites = validate_config()
 
     console.log('setting up directories...')
     ensure_dirs()
 
-    // Stop services first
+    console.log('cleaning up...')
     cleanup()
 
     console.log('generating configuration...')
-    require('./config-parser')
+    // Generate and write configurations
+    const nginx_config = generate_nginx_config(sites)
+    const dnsmasq_config = generate_dnsmasq_config(sites)
 
-    // Verify configs exist
-    const required_files = [
-      'docker/nginx/nginx.conf',
-      'docker/dnsmasq/dnsmasq.conf'
-    ]
-
-    for (const file of required_files) {
-      if (!fs.existsSync(file)) {
-        throw new Error(`Required config file not found: ${file}`)
-      }
-    }
+    fs.writeFileSync('docker/nginx/nginx.conf', nginx_config, { 
+      encoding: 'utf8', 
+      mode: 0o644,
+      flag: 'w'
+    })
+    fs.writeFileSync('docker/dnsmasq/dnsmasq.conf', dnsmasq_config, { 
+      encoding: 'utf8', 
+      mode: 0o644,
+      flag: 'w'
+    })
 
     console.log('generating certificates...')
     generate_certificates(sites)
 
+    console.log('checking for processes on port 53...')
     kill_port_53()
+
+    console.log('configuring system dns...')
     configure_system_dns()
 
     console.log('starting services...')
     execSync('docker-compose up -d', { stdio: 'inherit' })
 
-    // Wait for services to start
     console.log('waiting for services to start...')
-    await new Promise(resolve => setTimeout(resolve, 5000))
+    await new Promise(resolve => setTimeout(resolve, 2000))
 
-    // Run tests with timeout
-    const test_timeout = setTimeout(() => {
-      console.error('Tests timed out after 30 seconds')
-      process.exit(1)
-    }, 30000)
-
+    console.log('\ntesting dns resolution...')
     await test_dns(sites)
+
+    console.log('\ntesting http connectivity...')
     await test_http(sites)
 
-    clearTimeout(test_timeout)
-
-    console.log('\nsetup complete! your local routes are ready.')
-    console.log('\nto verify:')
-    console.log('1. try pinging your domains:')
-    for (const site of sites) {
-      console.log(`   ping ${site.network_domain}`)
-    }
-    console.log('2. try accessing your sites in a browser')
-    console.log('3. check docker logs if needed: docker-compose logs -f')
-    console.log('\nto restore original dns:')
-    console.log('sudo mv /etc/resolv.conf.backup /etc/resolv.conf')
-
-    process.exit(0)
+    console.log('\nsetup complete! your local routes are ready.\n')
+    print_help()
   } catch (error) {
     console.error('Error:', error.message)
     process.exit(1)
@@ -487,11 +337,4 @@ const main = async () => {
 }
 
 if (require.main === module) {
-  main().catch(console.error)
-}
-
-module.exports = {
-  validate_config,
-  test_dns,
-  test_http
-} 
+  main() 
