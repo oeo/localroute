@@ -72,6 +72,151 @@ this will:
 - restart the services
 - test the configuration
 
+### configuring network-wide dns
+to use localroute as your network's dns server (like pihole):
+
+#### unifi
+1. login to your unifi controller
+2. go to settings > networks
+3. select your network
+4. expand 'dhcp and dns'
+5. set 'dns server 1' to 192.168.1.201
+6. click 'apply changes'
+
+#### openwrt
+1. login to luci interface
+2. go to network > dhcp/dns
+3. set 'dns forwardings' to 192.168.1.201
+4. restart dnsmasq service or reboot router
+
+#### pfsense
+1. login to web interface
+2. go to services > dhcp server
+3. select your lan interface
+4. set 'dns servers' to 192.168.1.201
+5. click 'save'
+6. go to system > general setup
+7. set 'dns servers' to 192.168.1.201 (to use it for the router itself)
+8. click 'save'
+
+#### mikrotik
+1. login to winbox/webfig
+2. go to ip > dhcp server
+3. select your dhcp server
+4. set 'dns servers' to 192.168.1.201
+5. click 'apply'
+
+#### generic router
+1. login to your router's admin interface
+2. look for dhcp/dns settings (usually under lan/network settings)
+3. set primary dns server to 192.168.1.201
+4. save changes and restart if needed
+
+#### synology
+1. login to dsm
+2. open control panel
+3. go to network > general
+4. set primary dns to 192.168.1.201
+5. click 'apply'
+
+#### truenas
+1. login to web interface
+2. go to network > global configuration
+3. set nameserver 1 to 192.168.1.201
+4. click 'save'
+
+note: after changing network-wide dns:
+- some devices may need to renew their dhcp lease
+- you can force this by disconnecting/reconnecting to the network
+- or by running `ipconfig /release && ipconfig /renew` on windows
+- or `sudo dhclient -r && sudo dhclient` on linux
+
+### configuring clients to use your dns server
+to use your localroute server (assuming it's running at 192.168.1.201):
+
+#### linux (networkmanager)
+1. gui method:
+   - open network settings
+   - select your network connection
+   - click the gear icon to edit
+   - go to the 'ipv4' tab
+   - change dns method to 'manual'
+   - add 192.168.1.201 as your dns server
+   - click 'apply'
+
+2. command line method:
+   ```bash
+   # edit your connection (replace 'Wired connection 1' with your connection name)
+   nmcli con mod "Wired connection 1" ipv4.dns "192.168.1.201"
+   nmcli con mod "Wired connection 1" ipv4.ignore-auto-dns yes
+   
+   # restart the connection
+   nmcli con down "Wired connection 1"
+   nmcli con up "Wired connection 1"
+   ```
+
+#### linux (systemd-resolved)
+```bash
+# edit /etc/systemd/resolved.conf
+sudo tee /etc/systemd/resolved.conf << EOF
+[Resolve]
+DNS=192.168.1.201
+EOF
+
+# restart systemd-resolved
+sudo systemctl restart systemd-resolved
+```
+
+#### macos
+1. gui method:
+   - open system preferences
+   - click on network
+   - select your active network connection
+   - click 'advanced'
+   - go to the 'dns' tab
+   - click '+' and add 192.168.1.201
+   - click 'ok' and then 'apply'
+
+2. command line method:
+   ```bash
+   # get your network service (usually 'Wi-Fi' or 'Ethernet')
+   networksetup -listallnetworkservices
+   
+   # set dns server (replace 'Wi-Fi' with your service name)
+   sudo networksetup -setdnsservers "Wi-Fi" 192.168.1.201
+   ```
+
+#### windows
+1. gui method:
+   - open network & internet settings
+   - click 'change adapter options'
+   - right-click your connection and select 'properties'
+   - select 'internet protocol version 4 (tcp/ipv4)'
+   - click 'properties'
+   - select 'use the following dns server addresses'
+   - enter 192.168.1.201 as preferred dns server
+   - click 'ok'
+
+2. powershell method (run as administrator):
+   ```powershell
+   # get your network adapter name
+   Get-NetAdapter
+   
+   # set dns server (replace 'Ethernet' with your adapter name)
+   Set-DnsClientServerAddress -InterfaceAlias "Ethernet" -ServerAddresses "192.168.1.201"
+   ```
+
+### verifying dns setup
+to verify your dns is working:
+```bash
+# test dns resolution
+ping example.local
+ping librechat.local
+
+# check which dns server is being used
+nslookup example.local
+```
+
 ### stopping services
 ```bash
 docker-compose down
@@ -84,8 +229,33 @@ docker-compose logs -f
 
 ### restoring original dns
 if you want to stop using localroute's dns:
+
+#### linux (networkmanager)
 ```bash
-sudo mv /etc/resolv.conf.backup /etc/resolv.conf
+# reset to automatic dns (replace 'Wired connection 1' with your connection name)
+nmcli con mod "Wired connection 1" ipv4.dns ""
+nmcli con mod "Wired connection 1" ipv4.ignore-auto-dns no
+nmcli con down "Wired connection 1"
+nmcli con up "Wired connection 1"
+```
+
+#### linux (systemd-resolved)
+```bash
+# restore default resolved.conf
+sudo rm /etc/systemd/resolved.conf
+sudo systemctl restart systemd-resolved
+```
+
+#### macos
+```bash
+# reset to automatic dns (replace 'Wi-Fi' with your service name)
+sudo networksetup -setdnsservers "Wi-Fi" "empty"
+```
+
+#### windows (powershell as administrator)
+```powershell
+# reset to automatic dns (replace 'Ethernet' with your adapter name)
+Set-DnsClientServerAddress -InterfaceAlias "Ethernet" -ResetServerAddresses
 ```
 
 ## configuration
@@ -126,8 +296,10 @@ the following files are generated and should not be committed to git:
 ## troubleshooting
 1. dns not working:
    - check if port 53 is available
-   - ensure your system dns points to 127.0.0.1
+   - ensure your dns points to 192.168.1.201
    - try adding domains to /etc/hosts as fallback
+   - check if your router or isp is blocking port 53
+   - verify dnsmasq container is running: `docker-compose ps`
 
 2. ssl certificate warnings:
    - install mkcert for trusted certificates
