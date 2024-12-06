@@ -135,25 +135,42 @@ const ensure_dirs = () => {
 const test_http = async (sites) => {
   console.log('\ntesting http connectivity...')
   
-  for (const site of sites) {
+  const test_site = async (site) => {
     const protocol = site.force_ssl ? 'https' : 'http'
     const url = `${protocol}://172.20.0.2`
     
-    try {
+    return new Promise((resolve) => {
       console.log(`testing ${site.network_domain}...`)
-      const response = await new Promise((resolve, reject) => {
-        const req = (protocol === 'https' ? https : http).get(url, {
-          headers: { Host: site.network_domain },
-          rejectUnauthorized: false,
-          timeout: 5000
-        }, resolve)
-        req.on('error', reject)
-        req.end()
+      const req = (protocol === 'https' ? https : http).get(url, {
+        headers: { Host: site.network_domain },
+        rejectUnauthorized: false,
+        timeout: 5000
       })
-      console.log(`✓ ${site.network_domain} -> ${response.statusCode}`)
-    } catch (error) {
-      console.error(`✗ failed to connect to ${site.network_domain}: ${error.message}`)
-    }
+
+      req.on('response', (response) => {
+        console.log(`✓ ${site.network_domain} -> ${response.statusCode}`)
+        response.resume() // drain the response
+        resolve()
+      })
+
+      req.on('error', (error) => {
+        console.error(`✗ failed to connect to ${site.network_domain}: ${error.message}`)
+        resolve()
+      })
+
+      req.on('timeout', () => {
+        console.error(`✗ timeout testing ${site.network_domain}`)
+        req.destroy()
+        resolve()
+      })
+
+      req.end()
+    })
+  }
+
+  // Test sites sequentially
+  for (const site of sites) {
+    await test_site(site)
   }
 }
 
@@ -162,25 +179,27 @@ const test_dns = async (sites) => {
   const resolver = new dns.Resolver()
   resolver.setServers(['127.0.0.1'])
 
-  for (const site of sites) {
-    if (site.force_dns) {
-      try {
-        console.log(`resolving ${site.network_domain}...`)
-        const addresses = await new Promise((resolve, reject) => {
-          resolver.resolve4(site.network_domain, (err, addresses) => {
-            if (err) reject(err)
-            else resolve(addresses)
-          })
-        })
-        if (addresses[0] === '172.20.0.2') {
+  const test_domain = async (site) => {
+    if (!site.force_dns) return
+
+    return new Promise((resolve) => {
+      console.log(`resolving ${site.network_domain}...`)
+      resolver.resolve4(site.network_domain, { timeout: 5000 }, (err, addresses) => {
+        if (err) {
+          console.error(`✗ failed to resolve ${site.network_domain}: ${err.message}`)
+        } else if (addresses[0] === '172.20.0.2') {
           console.log(`✓ ${site.network_domain} -> ${addresses[0]}`)
         } else {
           console.error(`✗ ${site.network_domain} resolved to wrong IP: ${addresses[0]} (expected 172.20.0.2)`)
         }
-      } catch (error) {
-        console.error(`✗ failed to resolve ${site.network_domain}: ${error.message}`)
-      }
-    }
+        resolve()
+      })
+    })
+  }
+
+  // Test domains sequentially
+  for (const site of sites) {
+    await test_domain(site)
   }
 }
 
@@ -208,9 +227,16 @@ const main = async () => {
     console.log('waiting for services to start...')
     await new Promise(resolve => setTimeout(resolve, 5000))
 
-    // Run tests
+    // Run tests with timeout
+    const test_timeout = setTimeout(() => {
+      console.error('Tests timed out after 30 seconds')
+      process.exit(1)
+    }, 30000)
+
     await test_dns(sites)
     await test_http(sites)
+
+    clearTimeout(test_timeout)
 
     console.log('\nsetup complete! your local routes are ready.')
     console.log('\nto use:')
@@ -220,6 +246,8 @@ const main = async () => {
     }
     console.log('2. or configure your dns server to use this as upstream')
     console.log('3. or add nameserver 127.0.0.1 to /etc/resolv.conf')
+
+    process.exit(0)
   } catch (error) {
     console.error('Error:', error.message)
     process.exit(1)
