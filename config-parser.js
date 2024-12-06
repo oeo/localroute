@@ -126,9 +126,14 @@ interface=*
 all-servers
 dns-forward-max=150
 
-# handle .local domains internally
+# disable mdns
+local-service
+domain-needed
+
+# handle local domains
 local=/local/
-domain=local
+domain-needed
+bogus-priv
 expand-hosts
 
 # enable logging
@@ -141,6 +146,9 @@ cache-size=1000
 # fallback dns resolvers (cloudflare and google)
 server=1.1.1.1
 server=8.8.8.8
+
+# explicitly handle .local domains
+address=/.local/172.20.0.2
 
 `
 
