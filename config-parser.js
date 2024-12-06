@@ -122,24 +122,20 @@ no-resolv
 # listen on all interfaces
 interface=*
 
-# don't forward plain names without dots or domain parts
-domain-needed
-
-# never forward addresses in non-routed address spaces
-bogus-priv
-
-# add local domain to hostnames
-expand-hosts
+# enable dns forwarding
+all-servers
+dns-forward-max=150
 
 # enable logging
 log-queries
 log-facility=-
 
-# don't read /etc/hosts
-no-hosts
-
 # cache size
 cache-size=1000
+
+# fallback dns resolvers (cloudflare and google)
+server=1.1.1.1
+server=8.8.8.8
 
 `
 
