@@ -132,6 +132,31 @@ const ensure_dirs = () => {
   }
 }
 
+const test_http = async (sites) => {
+  console.log('\ntesting http connectivity...')
+  
+  for (const site of sites) {
+    const protocol = site.force_ssl ? 'https' : 'http'
+    const url = `${protocol}://172.20.0.2`
+    
+    try {
+      console.log(`testing ${site.network_domain}...`)
+      const response = await new Promise((resolve, reject) => {
+        const req = (protocol === 'https' ? https : http).get(url, {
+          headers: { Host: site.network_domain },
+          rejectUnauthorized: false,
+          timeout: 5000
+        }, resolve)
+        req.on('error', reject)
+        req.end()
+      })
+      console.log(`✓ ${site.network_domain} -> ${response.statusCode}`)
+    } catch (error) {
+      console.error(`✗ failed to connect to ${site.network_domain}: ${error.message}`)
+    }
+  }
+}
+
 const test_dns = async (sites) => {
   console.log('\ntesting dns resolution...')
   const resolver = new dns.Resolver()
@@ -147,33 +172,14 @@ const test_dns = async (sites) => {
             else resolve(addresses)
           })
         })
-        console.log(`✓ ${site.network_domain} -> ${addresses[0]}`)
+        if (addresses[0] === '172.20.0.2') {
+          console.log(`✓ ${site.network_domain} -> ${addresses[0]}`)
+        } else {
+          console.error(`✗ ${site.network_domain} resolved to wrong IP: ${addresses[0]} (expected 172.20.0.2)`)
+        }
       } catch (error) {
         console.error(`✗ failed to resolve ${site.network_domain}: ${error.message}`)
       }
-    }
-  }
-}
-
-const test_http = async (sites) => {
-  console.log('\ntesting http connectivity...')
-  
-  for (const site of sites) {
-    const protocol = site.force_ssl ? 'https' : 'http'
-    const url = `${protocol}://${site.network_domain}`
-    
-    try {
-      console.log(`testing ${url}...`)
-      const response = await new Promise((resolve, reject) => {
-        const req = (protocol === 'https' ? https : http).get(url, {
-          headers: { Host: site.network_domain },
-          rejectUnauthorized: false
-        }, resolve)
-        req.on('error', reject)
-      })
-      console.log(`✓ ${url} -> ${response.statusCode}`)
-    } catch (error) {
-      console.error(`✗ failed to connect to ${url}: ${error.message}`)
     }
   }
 }
@@ -207,6 +213,13 @@ const main = async () => {
     await test_http(sites)
 
     console.log('\nsetup complete! your local routes are ready.')
+    console.log('\nto use:')
+    console.log('1. add to /etc/hosts or point dns to this server:')
+    for (const site of sites) {
+      console.log(`   172.20.0.2 ${site.network_domain}`)
+    }
+    console.log('2. or configure your dns server to use this as upstream')
+    console.log('3. or add nameserver 127.0.0.1 to /etc/resolv.conf')
   } catch (error) {
     console.error('Error:', error.message)
     process.exit(1)
