@@ -26,4 +26,4 @@ Thumbs.db
 sites.conf.json
 sites.conf.json.back
 
-docker/*
+docker*
