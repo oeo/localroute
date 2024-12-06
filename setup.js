@@ -2,6 +2,34 @@
 const fs = require('fs')
 const path = require('path')
 const { execSync } = require('child_process')
+const dns = require('dns')
+const http = require('http')
+const https = require('https')
+
+const validate_config = () => {
+  try {
+    const config = JSON.parse(fs.readFileSync('sites.conf', 'utf8'))
+    if (!config.sites || !Array.isArray(config.sites)) {
+      throw new Error('sites.conf must contain a "sites" array')
+    }
+    
+    for (const site of config.sites) {
+      if (!site.network_domain) throw new Error('Each site must have a network_domain')
+      if (!site.real_host) throw new Error('Each site must have a real_host')
+      if (typeof site.force_ssl !== 'boolean') throw new Error('force_ssl must be a boolean')
+      if (typeof site.force_dns !== 'boolean') throw new Error('force_dns must be a boolean')
+      
+      // Validate real_host format
+      if (!site.real_host.match(/^https?:\/\/[^\/]+$/)) {
+        throw new Error(`Invalid real_host format for ${site.network_domain}: ${site.real_host}`)
+      }
+    }
+    return config.sites
+  } catch (error) {
+    console.error('Configuration validation failed:', error.message)
+    process.exit(1)
+  }
+}
 
 const kill_port_53 = () => {
   console.log('checking for processes on port 53...')
@@ -46,15 +74,6 @@ const kill_port_53 = () => {
   }
 }
 
-const cleanup_docker = () => {
-  console.log('cleaning up docker containers...')
-  try {
-    execSync('docker-compose down', { stdio: 'ignore' })
-  } catch (e) {
-    // ignore errors if containers aren't running
-  }
-}
-
 const ensure_dirs = () => {
   const dirs = [
     'docker/nginx',
@@ -67,100 +86,92 @@ const ensure_dirs = () => {
       fs.mkdirSync(dir, { recursive: true })
     }
   }
-
-  // ensure sites.conf exists with a default configuration
-  if (!fs.existsSync('sites.conf')) {
-    const default_config = `define {
-  force_ssl: false
-  force_dns: true
-  network_domain: "example.local"
-  real_host: "http://127.0.0.1:8080"
 }
-`
-    fs.writeFileSync('sites.conf', default_config)
-  }
 
-  // ensure dnsmasq.conf exists and is a file, not a directory
-  const dnsmasq_conf = 'docker/dnsmasq/dnsmasq.conf'
-  if (fs.existsSync(dnsmasq_conf)) {
-    try {
-      const stats = fs.statSync(dnsmasq_conf)
-      if (stats.isDirectory()) {
-        fs.rmdirSync(dnsmasq_conf)
+const test_dns = async (sites) => {
+  console.log('\ntesting dns resolution...')
+  const resolver = new dns.Resolver()
+  resolver.setServers(['127.0.0.1'])
+
+  for (const site of sites) {
+    if (site.force_dns) {
+      try {
+        console.log(`resolving ${site.network_domain}...`)
+        const addresses = await new Promise((resolve, reject) => {
+          resolver.resolve4(site.network_domain, (err, addresses) => {
+            if (err) reject(err)
+            else resolve(addresses)
+          })
+        })
+        console.log(`✓ ${site.network_domain} -> ${addresses[0]}`)
+      } catch (error) {
+        console.error(`✗ failed to resolve ${site.network_domain}: ${error.message}`)
       }
-    } catch (e) {
-      // ignore errors
     }
   }
 }
 
-const refresh_config = () => {
-  console.log('refreshing configuration...')
-  kill_port_53()
-  cleanup_docker()
-  require('./config-parser')
-  require('./generate-certs')
-  console.log('starting containers...')
-  execSync('docker-compose restart', { stdio: 'inherit' })
-  console.log('refresh complete!')
-}
-
-const watch_mode = () => {
-  console.log('watching for changes in sites.conf...')
-  console.log('press ctrl+c to stop')
+const test_http = async (sites) => {
+  console.log('\ntesting http connectivity...')
   
-  fs.watch('sites.conf', (eventType, filename) => {
-    if (eventType === 'change') {
-      console.log('\ndetected changes in sites.conf')
-      refresh_config()
+  for (const site of sites) {
+    const protocol = site.force_ssl ? 'https' : 'http'
+    const url = `${protocol}://${site.network_domain}`
+    
+    try {
+      console.log(`testing ${url}...`)
+      const response = await new Promise((resolve, reject) => {
+        const req = (protocol === 'https' ? https : http).get(url, {
+          headers: { Host: site.network_domain },
+          rejectUnauthorized: false
+        }, resolve)
+        req.on('error', reject)
+      })
+      console.log(`✓ ${url} -> ${response.statusCode}`)
+    } catch (error) {
+      console.error(`✗ failed to connect to ${url}: ${error.message}`)
     }
-  })
+  }
 }
 
 const main = async () => {
-  const args = process.argv.slice(2)
-  const should_watch = args.includes('--watch') || args.includes('-w')
-  
-  console.log('setting up localroute...')
-  ensure_dirs()
-  
-  console.log('generating initial configuration...')
-  require('./config-parser')
-  
-  console.log('generating certificates...')
-  require('./generate-certs')
-  
-  kill_port_53()
-  cleanup_docker()
-  
-  console.log('starting containers...')
   try {
-    execSync('docker-compose up -d', { stdio: 'inherit' })
-  } catch (error) {
-    console.error('Error starting containers:', error.message)
-    process.exit(1)
-  }
-  
-  console.log('\nsetup complete!')
-  console.log('to use:')
-  console.log('1. edit sites.conf to add your domains')
-  console.log('2. run this script with --watch to auto-refresh on changes')
-  console.log('3. point your system dns to 127.0.0.1')
-  console.log('\nif using mkcert:')
-  console.log('- certificates will be automatically trusted')
-  console.log('- no browser warnings will appear')
-  console.log('\nif using self-signed certs:')
-  console.log('- you will need to click through browser warnings')
-  console.log('- to avoid warnings, install mkcert:')
-  console.log('  macOS: brew install mkcert')
-  console.log('  Linux: apt install mkcert')
+    console.log('validating configuration...')
+    const sites = validate_config()
 
-  if (should_watch) {
-    watch_mode()
+    console.log('setting up directories...')
+    ensure_dirs()
+
+    console.log('generating configuration...')
+    require('./config-parser')
+
+    kill_port_53()
+
+    console.log('starting services...')
+    execSync('docker-compose down', { stdio: 'inherit' })
+    execSync('docker-compose up -d', { stdio: 'inherit' })
+
+    // Wait for services to start
+    console.log('waiting for services to start...')
+    await new Promise(resolve => setTimeout(resolve, 5000))
+
+    // Run tests
+    await test_dns(sites)
+    await test_http(sites)
+
+    console.log('\nsetup complete! your local routes are ready.')
+  } catch (error) {
+    console.error('Error:', error.message)
+    process.exit(1)
   }
 }
 
-main().catch(error => {
-  console.error('Fatal error:', error)
-  process.exit(1)
-}) 
+if (require.main === module) {
+  main().catch(console.error)
+}
+
+module.exports = {
+  validate_config,
+  test_dns,
+  test_http
+} 
