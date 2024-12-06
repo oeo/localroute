@@ -203,6 +203,43 @@ const test_dns = async (sites) => {
   }
 }
 
+const configure_system_dns = () => {
+  console.log('configuring system dns...')
+  
+  // Backup existing resolv.conf
+  if (fs.existsSync('/etc/resolv.conf') && !fs.existsSync('/etc/resolv.conf.backup')) {
+    try {
+      execSync('sudo cp /etc/resolv.conf /etc/resolv.conf.backup', { stdio: 'inherit' })
+      console.log('backed up existing resolv.conf')
+    } catch (error) {
+      console.error('failed to backup resolv.conf:', error.message)
+      return
+    }
+  }
+
+  // Write new resolv.conf
+  try {
+    const resolv_conf = 'nameserver 127.0.0.1\noptions timeout:1\n'
+    execSync(`echo '${resolv_conf}' | sudo tee /etc/resolv.conf`, { stdio: 'inherit' })
+    console.log('updated resolv.conf to use local dns')
+  } catch (error) {
+    console.error('failed to update resolv.conf:', error.message)
+    return
+  }
+
+  // Verify the change
+  try {
+    const current = fs.readFileSync('/etc/resolv.conf', 'utf8')
+    if (!current.includes('nameserver 127.0.0.1')) {
+      console.error('failed to verify dns configuration')
+      return
+    }
+  } catch (error) {
+    console.error('failed to verify dns configuration:', error.message)
+    return
+  }
+}
+
 const main = async () => {
   try {
     console.log('validating configuration...')
@@ -218,6 +255,7 @@ const main = async () => {
     generate_certificates(sites)
 
     kill_port_53()
+    configure_system_dns()
 
     console.log('starting services...')
     execSync('docker-compose down', { stdio: 'inherit' })
@@ -239,13 +277,15 @@ const main = async () => {
     clearTimeout(test_timeout)
 
     console.log('\nsetup complete! your local routes are ready.')
-    console.log('\nto use:')
-    console.log('1. add to /etc/hosts or point dns to this server:')
+    console.log('\nto verify:')
+    console.log('1. try pinging your domains:')
     for (const site of sites) {
-      console.log(`   172.20.0.2 ${site.network_domain}`)
+      console.log(`   ping ${site.network_domain}`)
     }
-    console.log('2. or configure your dns server to use this as upstream')
-    console.log('3. or add nameserver 127.0.0.1 to /etc/resolv.conf')
+    console.log('2. try accessing your sites in a browser')
+    console.log('3. check docker logs if needed: docker-compose logs -f')
+    console.log('\nto restore original dns:')
+    console.log('sudo mv /etc/resolv.conf.backup /etc/resolv.conf')
 
     process.exit(0)
   } catch (error) {
