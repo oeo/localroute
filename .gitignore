@@ -1,44 +1,23 @@
-# rust
-/target/
-**/*.rs.bk
+# generated configs
+docker/nginx/nginx.conf
+docker/dnsmasq/dnsmasq.conf
 
-# cargo.lock - uncomment for libraries, keep for binaries
-# cargo.lock
+# certificates
+ssl/
+*.crt
+*.key
+*.pem
 
-# editor & ide
+# node
+node_modules/
+npm-debug.log*
+
+# editor files
 .vscode/
 .idea/
 *.swp
 *.swo
-*~
-.ds_store
-thumbs.db
 
-# project and env
-node_modules/
-tmp/
-.env
-package-lock.json
-yarn-lock.json
-
-# compiled python
-*.pyc
-
-# logs
-*.log
-*.sqlite
-
-# build outputs
-/dist/
-/build/
-/out/
-
-# archives
-*.zip
-*.tar
-*.gz
-*.bz2
-*.7z
-*.rar
-
-docker/nginx/nginx.conf
+# os files
+.DS_Store
+Thumbs.db

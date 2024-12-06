@@ -16,7 +16,25 @@ a local dns and routing solution using dnsmasq and nginx in docker. this project
 
 ## installation
 1. clone this repository
-2. run `chmod +x setup.js` to make the setup script executable
+2. create your `sites.conf`:
+   ```json
+   {
+     "sites": [
+       {
+         "force_ssl": false,
+         "force_dns": true,
+         "network_domain": "example.local",
+         "real_host": "http://192.168.1.100:8080"
+       },
+       {
+         "force_ssl": true,
+         "force_dns": true,
+         "network_domain": "librechat.local",
+         "real_host": "http://192.168.1.167:3006"
+       }
+     ]
+   }
+   ```
 3. install mkcert (optional, for trusted certificates):
    ```bash
    # macos
@@ -29,52 +47,50 @@ a local dns and routing solution using dnsmasq and nginx in docker. this project
    pacman -S mkcert
    ```
 
-## configuration
-edit `sites.conf` to define your domains and upstream servers:
+## usage
 
-```json
-{
-  "sites": [
-    {
-      "force_ssl": false,
-      "force_dns": true,
-      "network_domain": "example.local",
-      "real_host": "http://192.168.1.100:8080"
-    },
-    {
-      "force_ssl": true,
-      "force_dns": true,
-      "network_domain": "librechat.local",
-      "real_host": "http://192.168.1.167:3006"
-    }
-  ]
-}
+### first time setup
+```bash
+chmod +x reload.js
+./reload.js
 ```
 
-## usage
-1. configure your sites in `sites.conf`
+### reloading configuration
+whenever you change `sites.conf`, just run:
+```bash
+./reload.js
+```
 
-2. run the setup script:
-   ```bash
-   ./setup.js
-   ```
-   this will:
-   - generate nginx and dnsmasq configurations
-   - create ssl certificates (trusted if mkcert is installed)
-   - start the docker containers
+this will:
+- validate your configuration
+- generate nginx and dnsmasq configs
+- create ssl certificates if needed
+- restart the services
+- test the configuration
 
-3. point your proxmox dns to this vm ip
-   ```bash
-   # macos: edit /etc/resolv.conf (requires disabling system dns)
-   nameserver 127.0.0.1
-   
-   # linux: edit /etc/resolv.conf or network manager
-   nameserver 127.0.0.1
-   ```
+### stopping services
+```bash
+docker-compose down
+```
 
-4. access your sites:
-   - http://example.local
-   - https://librechat.local
+### viewing logs
+```bash
+docker-compose logs -f
+```
+
+### restoring original dns
+if you want to stop using localroute's dns:
+```bash
+sudo mv /etc/resolv.conf.backup /etc/resolv.conf
+```
+
+## configuration
+edit `sites.conf` to define your domains and upstream servers. each site can have:
+
+- `force_ssl`: enable https and redirect http to https
+- `force_dns`: add dns record to dnsmasq
+- `network_domain`: the domain name to use (e.g. example.local)
+- `real_host`: the upstream server to proxy to (e.g. http://192.168.1.100:8080)
 
 ## ssl certificates
 the project supports two methods for ssl:
@@ -89,21 +105,6 @@ the project supports two methods for ssl:
    - used when mkcert is not available
    - requires clicking through browser warnings
    - still secure, just not automatically trusted
-
-## docker commands
-```bash
-# start services
-docker-compose up -d
-
-# stop services
-docker-compose down
-
-# view logs
-docker-compose logs -f
-
-# restart after config changes
-./setup.js
-```
 
 ## network configuration
 the service runs on the following ports:
@@ -125,3 +126,13 @@ the service runs on the following ports:
    - verify the real_host ip and port in sites.conf
    - ensure the upstream server is running
    - check docker network connectivity
+
+4. checking logs:
+   ```bash
+   # all services
+   docker-compose logs -f
+   
+   # specific service
+   docker-compose logs -f nginx
+   docker-compose logs -f dnsmasq
+   ```

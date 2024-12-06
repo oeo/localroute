@@ -6,6 +6,28 @@ const dns = require('dns')
 const http = require('http')
 const https = require('https')
 
+const cleanup = () => {
+  console.log('cleaning up...')
+  try {
+    // Stop services
+    execSync('docker-compose down', { stdio: 'inherit' })
+
+    // Remove generated files
+    const files_to_remove = [
+      'docker/nginx/nginx.conf',
+      'docker/dnsmasq/dnsmasq.conf'
+    ]
+
+    for (const file of files_to_remove) {
+      if (fs.existsSync(file)) {
+        fs.unlinkSync(file)
+      }
+    }
+  } catch (error) {
+    console.error('cleanup error:', error.message)
+  }
+}
+
 const validate_config = () => {
   try {
     const config = JSON.parse(fs.readFileSync('sites.conf', 'utf8'))
@@ -132,6 +154,72 @@ const ensure_dirs = () => {
   }
 }
 
+const configure_system_dns = () => {
+  console.log('configuring system dns...')
+  
+  // Backup existing resolv.conf
+  if (fs.existsSync('/etc/resolv.conf') && !fs.existsSync('/etc/resolv.conf.backup')) {
+    try {
+      execSync('sudo cp /etc/resolv.conf /etc/resolv.conf.backup', { stdio: 'inherit' })
+      console.log('backed up existing resolv.conf')
+    } catch (error) {
+      console.error('failed to backup resolv.conf:', error.message)
+      return
+    }
+  }
+
+  // Write new resolv.conf
+  try {
+    const resolv_conf = 'nameserver 127.0.0.1\noptions timeout:1\n'
+    execSync(`echo '${resolv_conf}' | sudo tee /etc/resolv.conf`, { stdio: 'inherit' })
+    console.log('updated resolv.conf to use local dns')
+  } catch (error) {
+    console.error('failed to update resolv.conf:', error.message)
+    return
+  }
+
+  // Verify the change
+  try {
+    const current = fs.readFileSync('/etc/resolv.conf', 'utf8')
+    if (!current.includes('nameserver 127.0.0.1')) {
+      console.error('failed to verify dns configuration')
+      return
+    }
+  } catch (error) {
+    console.error('failed to verify dns configuration:', error.message)
+    return
+  }
+}
+
+const test_dns = async (sites) => {
+  console.log('\ntesting dns resolution...')
+  const resolver = new dns.Resolver()
+  resolver.setServers(['127.0.0.1'])
+
+  const test_domain = async (site) => {
+    if (!site.force_dns) return
+
+    return new Promise((resolve) => {
+      console.log(`resolving ${site.network_domain}...`)
+      resolver.resolve4(site.network_domain, { timeout: 5000 }, (err, addresses) => {
+        if (err) {
+          console.error(`✗ failed to resolve ${site.network_domain}: ${err.message}`)
+        } else if (addresses[0] === '172.20.0.2') {
+          console.log(`✓ ${site.network_domain} -> ${addresses[0]}`)
+        } else {
+          console.error(`✗ ${site.network_domain} resolved to wrong IP: ${addresses[0]} (expected 172.20.0.2)`)
+        }
+        resolve()
+      })
+    })
+  }
+
+  // Test domains sequentially
+  for (const site of sites) {
+    await test_domain(site)
+  }
+}
+
 const test_http = async (sites) => {
   console.log('\ntesting http connectivity...')
   
@@ -174,74 +262,15 @@ const test_http = async (sites) => {
   }
 }
 
-const test_dns = async (sites) => {
-  console.log('\ntesting dns resolution...')
-  const resolver = new dns.Resolver()
-  resolver.setServers(['127.0.0.1'])
-
-  const test_domain = async (site) => {
-    if (!site.force_dns) return
-
-    return new Promise((resolve) => {
-      console.log(`resolving ${site.network_domain}...`)
-      resolver.resolve4(site.network_domain, { timeout: 5000 }, (err, addresses) => {
-        if (err) {
-          console.error(`✗ failed to resolve ${site.network_domain}: ${err.message}`)
-        } else if (addresses[0] === '172.20.0.2') {
-          console.log(`✓ ${site.network_domain} -> ${addresses[0]}`)
-        } else {
-          console.error(`✗ ${site.network_domain} resolved to wrong IP: ${addresses[0]} (expected 172.20.0.2)`)
-        }
-        resolve()
-      })
-    })
-  }
-
-  // Test domains sequentially
-  for (const site of sites) {
-    await test_domain(site)
-  }
-}
-
-const configure_system_dns = () => {
-  console.log('configuring system dns...')
-  
-  // Backup existing resolv.conf
-  if (fs.existsSync('/etc/resolv.conf') && !fs.existsSync('/etc/resolv.conf.backup')) {
-    try {
-      execSync('sudo cp /etc/resolv.conf /etc/resolv.conf.backup', { stdio: 'inherit' })
-      console.log('backed up existing resolv.conf')
-    } catch (error) {
-      console.error('failed to backup resolv.conf:', error.message)
-      return
-    }
-  }
-
-  // Write new resolv.conf
-  try {
-    const resolv_conf = 'nameserver 127.0.0.1\noptions timeout:1\n'
-    execSync(`echo '${resolv_conf}' | sudo tee /etc/resolv.conf`, { stdio: 'inherit' })
-    console.log('updated resolv.conf to use local dns')
-  } catch (error) {
-    console.error('failed to update resolv.conf:', error.message)
-    return
-  }
-
-  // Verify the change
-  try {
-    const current = fs.readFileSync('/etc/resolv.conf', 'utf8')
-    if (!current.includes('nameserver 127.0.0.1')) {
-      console.error('failed to verify dns configuration')
-      return
-    }
-  } catch (error) {
-    console.error('failed to verify dns configuration:', error.message)
-    return
-  }
-}
-
 const main = async () => {
   try {
+    // Handle command line arguments
+    const args = process.argv.slice(2)
+    if (args.includes('--clean')) {
+      cleanup()
+      return
+    }
+
     console.log('validating configuration...')
     const sites = validate_config()
 
@@ -258,7 +287,7 @@ const main = async () => {
     configure_system_dns()
 
     console.log('starting services...')
-    execSync('docker-compose down', { stdio: 'inherit' })
+    cleanup()
     execSync('docker-compose up -d', { stdio: 'inherit' })
 
     // Wait for services to start
