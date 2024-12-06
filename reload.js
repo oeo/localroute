@@ -348,4 +348,8 @@ const main = async () => {
 }
 
 if (require.main === module) {
-  main() 
+  main().catch(error => {
+    console.error('Unhandled error:', error)
+    process.exit(1)
+  })
+} 
