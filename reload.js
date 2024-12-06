@@ -159,6 +159,18 @@ const ensure_dirs = () => {
       fs.mkdirSync(dir, { recursive: true })
     }
   }
+
+  // Ensure config files exist with default content
+  const default_configs = {
+    'docker/nginx/nginx.conf': 'user nginx;\n',
+    'docker/dnsmasq/dnsmasq.conf': '# dnsmasq config\n'
+  }
+
+  for (const [file, content] of Object.entries(default_configs)) {
+    if (!fs.existsSync(file)) {
+      fs.writeFileSync(file, content)
+    }
+  }
 }
 
 const configure_system_dns = () => {
@@ -290,6 +302,18 @@ const main = async () => {
 
     console.log('generating configuration...')
     require('./config-parser')
+
+    // Verify configs exist
+    const required_files = [
+      'docker/nginx/nginx.conf',
+      'docker/dnsmasq/dnsmasq.conf'
+    ]
+
+    for (const file of required_files) {
+      if (!fs.existsSync(file)) {
+        throw new Error(`Required config file not found: ${file}`)
+      }
+    }
 
     console.log('generating certificates...')
     generate_certificates(sites)
