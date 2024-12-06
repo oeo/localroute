@@ -11,12 +11,16 @@ a local dns and routing solution using dnsmasq and nginx in docker. this project
 - `docker`
 - `docker-compose`
 - `node.js` (for configuration scripts)
-  - no dependencies, just used to parse `sites.conf`
+  - no dependencies, just used to parse `sites.conf.json`
 - `mkcert` (optional, for trusted certificates)
 
 ## installation
 1. clone this repository
-2. create your `sites.conf`:
+2. copy the example config:
+   ```bash
+   cp sites.conf.json.example sites.conf.json
+   ```
+3. edit `sites.conf.json` to define your sites:
    ```json
    {
      "sites": [
@@ -35,7 +39,7 @@ a local dns and routing solution using dnsmasq and nginx in docker. this project
      ]
    }
    ```
-3. install mkcert (optional, for trusted certificates):
+4. install mkcert (optional, for trusted certificates):
    ```bash
    # macos
    brew install mkcert
@@ -56,7 +60,7 @@ chmod +x reload.js
 ```
 
 ### reloading configuration
-whenever you change `sites.conf`, just run:
+whenever you change `sites.conf.json`, just run:
 ```bash
 ./reload.js
 ```
@@ -85,7 +89,7 @@ sudo mv /etc/resolv.conf.backup /etc/resolv.conf
 ```
 
 ## configuration
-edit `sites.conf` to define your domains and upstream servers. each site can have:
+edit `sites.conf.json` to define your domains and upstream servers. each site can have:
 
 - `force_ssl`: enable https and redirect http to https
 - `force_dns`: add dns record to dnsmasq
@@ -112,6 +116,13 @@ the service runs on the following ports:
 - http (nginx): 80
 - https (nginx): 443
 
+## generated files
+the following files are generated and should not be committed to git:
+- `docker/nginx/nginx.conf`: generated nginx configuration
+- `docker/dnsmasq/dnsmasq.conf`: generated dnsmasq configuration
+- `ssl/`: directory containing generated certificates
+- `sites.conf.json`: your local site configuration
+
 ## troubleshooting
 1. dns not working:
    - check if port 53 is available
@@ -123,7 +134,7 @@ the service runs on the following ports:
    - or click through the warnings for self-signed certs
 
 3. upstream server not reachable:
-   - verify the real_host ip and port in sites.conf
+   - verify the real_host ip and port in sites.conf.json
    - ensure the upstream server is running
    - check docker network connectivity
 

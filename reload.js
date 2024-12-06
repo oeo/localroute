@@ -38,9 +38,9 @@ const cleanup_files = () => {
 
 const validate_config = () => {
   try {
-    const config = JSON.parse(fs.readFileSync('sites.conf', 'utf8'))
+    const config = JSON.parse(fs.readFileSync('sites.conf.json', 'utf8'))
     if (!config.sites || !Array.isArray(config.sites)) {
-      throw new Error('sites.conf must contain a "sites" array')
+      throw new Error('sites.conf.json must contain a "sites" array')
     }
     
     for (const site of config.sites) {
@@ -49,7 +49,6 @@ const validate_config = () => {
       if (typeof site.force_ssl !== 'boolean') throw new Error('force_ssl must be a boolean')
       if (typeof site.force_dns !== 'boolean') throw new Error('force_dns must be a boolean')
       
-      // Validate real_host format
       if (!site.real_host.match(/^https?:\/\/[^\/]+$/)) {
         throw new Error(`Invalid real_host format for ${site.network_domain}: ${site.real_host}`)
       }

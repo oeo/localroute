@@ -21,3 +21,7 @@ npm-debug.log*
 # os files
 .DS_Store
 Thumbs.db
+
+# local config
+sites.conf.json
+sites.conf.json.back

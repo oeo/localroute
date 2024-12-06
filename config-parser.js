@@ -177,7 +177,7 @@ const main = () => {
   try {
     // Read and parse config
     console.log('reading configuration...')
-    const config_content = fs.readFileSync('sites.conf', 'utf8')
+    const config_content = fs.readFileSync('sites.conf.json', 'utf8')
     const sites = parse_config(config_content)
 
     // Generate configs
@@ -220,29 +220,6 @@ const main = () => {
     console.log('configuration generated successfully')
   } catch (error) {
     console.error('Error:', error.message)
-    // Try to get more information about the error
-    try {
-      const nginx_stats = fs.statSync('docker/nginx/nginx.conf')
-      console.error('nginx.conf stats:', {
-        size: nginx_stats.size,
-        mode: nginx_stats.mode.toString(8),
-        uid: nginx_stats.uid,
-        gid: nginx_stats.gid
-      })
-    } catch (e) {
-      console.error('Could not get nginx.conf stats:', e.message)
-    }
-    try {
-      const dnsmasq_stats = fs.statSync('docker/dnsmasq/dnsmasq.conf')
-      console.error('dnsmasq.conf stats:', {
-        size: dnsmasq_stats.size,
-        mode: dnsmasq_stats.mode.toString(8),
-        uid: dnsmasq_stats.uid,
-        gid: dnsmasq_stats.gid
-      })
-    } catch (e) {
-      console.error('Could not get dnsmasq.conf stats:', e.message)
-    }
     process.exit(1)
   }
 }
