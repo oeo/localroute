@@ -280,6 +280,17 @@ const test_http = async (sites) => {
   }
 }
 
+const print_help = () => {
+  console.log('to verify:')
+  console.log('1. try pinging your domains:')
+  console.log('   ping example.local')
+  console.log('   ping librechat.local')
+  console.log('2. try accessing your sites in a browser')
+  console.log('3. check docker logs if needed: docker-compose logs -f')
+  console.log('\nto restore original dns:')
+  console.log('sudo mv /etc/resolv.conf.backup /etc/resolv.conf')
+}
+
 const main = async () => {
   try {
     console.log('validating configuration...')
