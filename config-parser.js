@@ -126,6 +126,11 @@ interface=*
 all-servers
 dns-forward-max=150
 
+# handle .local domains internally
+local=/local/
+domain=local
+expand-hosts
+
 # enable logging
 log-queries
 log-facility=-
