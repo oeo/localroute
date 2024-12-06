@@ -162,8 +162,72 @@ const ensure_dirs = () => {
 
   // Ensure config files exist with default content
   const default_configs = {
-    'docker/nginx/nginx.conf': 'user nginx;\n',
-    'docker/dnsmasq/dnsmasq.conf': '# dnsmasq config\n'
+    'docker/nginx/nginx.conf': `user nginx;
+worker_processes auto;
+pid /var/run/nginx.pid;
+
+events {
+  worker_connections 1024;
+}
+
+http {
+  include /etc/nginx/mime.types;
+  default_type application/octet-stream;
+
+  log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                  '$status $body_bytes_sent "$http_referer" '
+                  '"$http_user_agent" "$http_x_forwarded_for"';
+
+  access_log /dev/stdout main;
+  error_log /dev/stderr warn;
+
+  sendfile on;
+  tcp_nopush on;
+  tcp_nodelay on;
+  keepalive_timeout 65;
+  types_hash_max_size 2048;
+
+  server {
+    listen 80 default_server;
+    server_name _;
+    return 404;
+  }
+}
+`,
+    'docker/dnsmasq/dnsmasq.conf': `# don't use /etc/resolv.conf
+no-resolv
+
+# listen on all interfaces
+interface=*
+
+# enable dns forwarding
+all-servers
+dns-forward-max=150
+
+# disable mdns warnings
+local-service
+domain-needed
+
+# handle local domains
+local=/local/
+domain-needed
+bogus-priv
+expand-hosts
+
+# enable logging
+log-queries
+log-facility=-
+
+# cache size
+cache-size=1000
+
+# fallback dns resolvers
+server=1.1.1.1
+server=8.8.8.8
+
+# explicitly handle .local domains
+address=/.local/172.20.0.2
+`
   }
 
   for (const [file, content] of Object.entries(default_configs)) {
